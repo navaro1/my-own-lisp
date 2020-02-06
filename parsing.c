@@ -31,7 +31,7 @@ lval* lval_num(long x) {
 }
 
 /* Construct a pointer to a new Error lval */
-lval* lval_err(char* x) {
+lval* lval_err(char* m) {
 	lval* v = malloc(sizeof(lval));
 	v->type	= LVAL_ERR;
 	v->err	= malloc(strlen(m) + 1);
@@ -64,12 +64,12 @@ void lval_del(lval* v) {
 
 		/* For Err or Sym free the string data */
 		case LVAL_ERR: free(v->err); break;
-		case LVAL_SYM: free(v->symb); break;
+		case LVAL_SYM: free(v->sym); break;
 
 		/* If Sexpr then delete all elements inside */
 		case LVAL_SEXPR:
 			for (int i = 0; i < v->count; i++) {
-				lval_dell(v->cell[i]);
+				lval_del(v->cell[i]);
 			}
 			/* Also free the memory allocated to contain the pointers */
 			free(v->cell);
@@ -86,6 +86,13 @@ lval* lval_read_num(mpc_ast_t* t) {
 		lval_num(x) : lval_err("invalid number");
 }
 
+lval* lval_add(lval* v, lval* x) {
+	v->count++;
+	v->cell = realloc(v->cell, sizeof(lval*) * v->count);
+	v->cell[v->count-1] = x;
+	return v;
+}
+
 lval* lval_read(mpc_ast_t* t) {
 	
 	/* If Symbol or Number terun conversion to that type */
@@ -98,31 +105,50 @@ lval* lval_read(mpc_ast_t* t) {
 	if (strstr(t->tag, "sexpr"))  { x = lval_sexpr(); }
 
 	/* Fill this list with any valid expression contained within */
-	// TODO: Fill this out
+	for (int i = 0; i < t->children_num; i++) {
+		if (strcmp(t->children[i]->contents, "(") == 0) { continue; }
+		if (strcmp(t->children[i]->contents, ")") == 0) { continue; }
+		if (strcmp(t->children[i]->contents, "regex") == 0) { continue; }
+		x = lval_add(x, lval_read(t->children[i]));
+	}
+	return x;
+}
+
+void lval_print(lval *v);
+
+void lval_expr_print(lval* v, char open, char close) {
+	putchar(open);
+	for (int i = 0; i < v->count; i++) {
+
+		/* Print Value contained within */
+		lval_print(v->cell[i]);
+	
+		/* Don't print trailing space if last element */
+		if (i != (v->count-1)) {
+			putchar(' ');
+		}	
+	}
+	putchar(close);
 }
 
 /* Print an "lval" */
-void lval_print(lval v) {
+void lval_print(lval* v) {
 	switch (v.type) {
-	/* In the case of the type is a number print it */
-	case LVAL_NUM: printf("%li", v.num); break;
+		/* In the case of the type is a number print it */
+		case LVAL_NUM: printf("%li", v->num); break;
+		
+		/* Print error message ine case of error */
+		case LVAL_ERR:
+			printf("Error: %s", v->err);
+			break;
 	
-	/* Print error message ine case of error */
-	case LVAL_ERR:
-		/* Check what type of error it is and print it */
-		if (v.err == LERR_DIV_ZERO) {
-			printf("Error: Division by Zero!");
-		} else if (v.err == LERR_BAD_OP) {
-			printf("Error: Invalid Symbol!");
-		} else if (v.err == LERR_BAD_NUM) {
-			printf("Error: Invalid Number!");
-		}
-		break;
+		case LVAL_SYM: printf("%s", v->sym); break;
+		case LVAL_SEXPR: lval_expr_print(v, '(', ')'); break;
 	}
 }
 
 /* Print an "lval" in a seperate line */
-void lval_println(lval v) {
+void lval_println(lval* v) {
 	lval_print(v);
 	putchar('\n');
 }
@@ -208,8 +234,11 @@ int main(int argc, char** argv) {
 		mpc_result_t r;
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
 			/* On Success Print Result */
-			lval result = eval(r.output);
-			lval_println(result);
+			lval* x = lval_read(r.output);
+			lval_println(x);
+			lval_del(x);
+			// lval result = eval(r.output);
+			// lval_println(result);
 			mpc_ast_delete(r.output);
 		} else {
 			/* Otherwise Print the Error */
