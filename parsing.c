@@ -8,10 +8,9 @@
 #include "mpc.h"
 
 /* Create Enumeration of Possible lval Types */
-typedef enum { LVAL_NUM, LVAL_ERR, LVAL_SYM, LVAL_SEXPR } lval_type;
-
+typedef enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR } lval_type;
 /* Declare New lval Struct */
-typedef struct {
+typedef struct lval {
 	lval_type type;
 	long num;
 	/* Error and Symbol types have some string data */
@@ -94,7 +93,6 @@ lval* lval_add(lval* v, lval* x) {
 }
 
 lval* lval_read(mpc_ast_t* t) {
-	
 	/* If Symbol or Number terun conversion to that type */
 	if (strstr(t->tag, "number")) { return lval_read_num(t); }
 	if (strstr(t->tag, "symbol")) { return lval_sym(t->contents); }
@@ -108,13 +106,13 @@ lval* lval_read(mpc_ast_t* t) {
 	for (int i = 0; i < t->children_num; i++) {
 		if (strcmp(t->children[i]->contents, "(") == 0) { continue; }
 		if (strcmp(t->children[i]->contents, ")") == 0) { continue; }
-		if (strcmp(t->children[i]->contents, "regex") == 0) { continue; }
+		if (strcmp(t->children[i]->tag, "regex") == 0) { continue; }
 		x = lval_add(x, lval_read(t->children[i]));
 	}
 	return x;
 }
 
-void lval_print(lval *v);
+void lval_print(lval* v);
 
 void lval_expr_print(lval* v, char open, char close) {
 	putchar(open);
@@ -133,7 +131,7 @@ void lval_expr_print(lval* v, char open, char close) {
 
 /* Print an "lval" */
 void lval_print(lval* v) {
-	switch (v.type) {
+	switch (v->type) {
 		/* In the case of the type is a number print it */
 		case LVAL_NUM: printf("%li", v->num); break;
 		
@@ -153,50 +151,8 @@ void lval_println(lval* v) {
 	putchar('\n');
 }
 
-lval eval_op(lval x, char* op, lval y) {
-	if (x.type == LVAL_ERR) { return x; }
-	if (y.type == LVAL_ERR) { return y; }
-
-	if (!strcmp(op, "+")) { return lval_num(x.num + y.num); }
-	if (!strcmp(op, "-")) { return lval_num(x.num - y.num); }
-	if (!strcmp(op, "*")) { return lval_num(x.num * y.num); }
-	if (!strcmp(op, "/")) {
-		return y.num == 0
-			? lval_err(LERR_DIV_ZERO)
-			: lval_num(x.num / y.num);
-	}
-	if (!strcmp(op, "%")) { 
-		return y.num == 0
-		? lval_err(LERR_DIV_ZERO)
-		: lval_num(x.num % y.num);
-	}
-	return lval_err(LERR_BAD_OP);
-}
-
-lval eval(mpc_ast_t* t) {
-	if (strstr(t->tag, "number")) {
-		/* Check if there is some error in conversion */
-		errno = 0;
-		long x = strtol(t->contents, NULL, 10);
-		return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
-	}
-
-	/* The operator is always second child */
-	char* op = t->children[1]->contents;
-	
-	/* We store the third child in `x` */
-	lval x = eval(t->children[2]);
-
-	/* Iterate the remaining children and combining. */
-	int i = 3;
-	while (strstr(t->children[i]->tag, "expr")) {
-		x = eval_op(x, op, eval(t->children[i]));
-		i++;
-	}
-	return x;
-}
-
 int main(int argc, char** argv) {
+
 	/* Create Some Parsers */
 	mpc_parser_t* Number	= mpc_new("number");
 	mpc_parser_t* Symbol	= mpc_new("symbol");
@@ -208,11 +164,11 @@ int main(int argc, char** argv) {
 	mpca_lang(
 		MPCA_LANG_DEFAULT,
 		"															\
-			number		:	/-?[0-9]+(\\.[0-9]+)?/ ;				\
+			number		:	/-?[0-9]+/ ;							\
 			symbol		:	'+' | '-' | '*' | '/' | '%';			\
 			sexpr		:	'(' <expr>* ')' ;						\
 			expr		:	<number> | <symbol> | <sexpr> ;			\
-			lispy		:	/^/ <operator> <expr>+ /$/ ;			\
+			lispy		:	/^/ <expr>* /$/ ;						\
 		",
 		Number, Symbol, Sexpr, Expr, Lispy
 	);
